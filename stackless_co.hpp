@@ -1,5 +1,7 @@
 #pragma once
 #include <tuple>
+#include <future>
+#include <memory>
 #define macro_expand(...) __VA_ARGS__
 #define args_placehold() 10,9,8,7,6,5,4,3,2,1,0
 #ifdef _MSC_VER
@@ -68,20 +70,56 @@
 #define ActDot9(...) :
 #define ActDot10(...) :
 
+template<typename...Args>
+struct promise_type {
+};
+template<typename T>
+struct promise_type<T> {
+	using type = T;
+};
+template<>
+struct promise_type<void> {
+	using type = void*;
+};
+
 template<typename T, typename Tuple, std::size_t...Index>
 auto expand_tuple(Tuple&& tuple, std::index_sequence<Index...>) {
 	return T{ std::get<Index>(tuple)... };
 }
-#define CO_BEGIN(...)\
+#define CO_BEGIN(Ret,...)\
 \
 auto save_stack_ = std::make_tuple(__VA_ARGS__);\
 \
 class co_type{ \
 public:\
-co_type(macro_expand(FOR_ACTION(CAtor,__VA_ARGS__)))macro_expand(FOR_ACTION(ActDot,__VA_ARGS__)) macro_expand(FOR_ACTION(ActorInit,__VA_ARGS__)){};\
+co_type(macro_expand(FOR_ACTION(CAtor,__VA_ARGS__)))macro_expand(FOR_ACTION(ActDot,__VA_ARGS__)) macro_expand(FOR_ACTION(ActorInit,__VA_ARGS__)){\
 \
+};\
+\
+using rtype = Ret;\
+public:\
+co_type& shared(){ \
+  promise_ = std::make_shared<std::promise<typename promise_type<Ret>::type>>();\
+  return *this;\
+}\
+void resume(typename promise_type<Ret>::type value){\
+ promise_->set_value(value);\
+ (*this)();\
+ promise_ = nullptr;\
+}\
+void resume(){\
+ promise_->set_value(typename promise_type<Ret>::type{});\
+ (*this)();\
+ promise_ = nullptr;\
+}\
+auto get(){\
+  auto v =  promise_->get_future().get();\
+  return v;\
+}\
 private:\
 macro_expand(FOR_ACTION(ActorDeclareVar,__VA_ARGS__))\
+public:\
+std::shared_ptr<std::promise<typename promise_type<Ret>::type>> promise_;\
 private:\
  int state_ = 0;\
 public:\
